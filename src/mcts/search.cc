@@ -341,10 +341,15 @@ void Search::MaybeTriggerStop() {
     // Stop if reached time limit.
     if (limits_.search_deadline && GetTimeToDeadline() <= 0) {
       bool extend_search = false;
-      if(!MaxVisitsMaxValueMatched()) limits_.extend_counter--;
-      if(limits_.extend_counter > 0) {
-        limits_.search_deadline = *limits_.search_deadline + *limits_.search_duration;
-        extend_search = true;
+      if(!MaxVisitsMaxValueMatched()) {
+        limits_.extend_counter++;
+        if(limits_.extend_counter < 3 && *limits_.search_duration <
+            *limits_.play_time - *limits_.search_duration*limits_.extend_counter) {
+          LOGFILE << "Extended search: " << limits_.extend_counter << " times.";
+          limits_.search_deadline = std::chrono::steady_clock::now()
+            + *limits_.search_duration;
+          extend_search = true;
+        }
       }
       if(!extend_search) {
         LOGFILE << "Stopped search: Ran out of time.";
@@ -520,10 +525,11 @@ bool Search::MaxVisitsMaxValueMatched() const {
   auto middle = (static_cast<int>(edges.size()) > count) ? edges.begin() + count
                                                          : edges.end();
   std::partial_sort(edges.begin(), middle, edges.end(), std::greater<El>());
-  EdgeAndNode edge_maxN = std::get<3>(edges[0]);
-  std::partial_sort(edges.begin(), middle, edges.end(), [](const El& x, const El& y) { return std::get<1>(x) > std::get<1>(y); });
-  EdgeAndNode edge_maxQ = std::get<3>(edges[0]);
-  return edge_maxN.GetMove().as_nn_index() == edge_maxQ.GetMove().as_nn_index();
+  auto move_maxN = std::get<3>(edges[0]).GetMove().as_nn_index();
+  std::partial_sort(edges.begin(), middle, edges.end(),
+      [](const El& x, const El& y) { return std::get<1>(x) > std::get<1>(y); });
+  auto move_maxQ = std::get<3>(edges[0]).GetMove().as_nn_index();
+  return move_maxN == move_maxQ;
 }
 
 // Returns @count children with most visits.
