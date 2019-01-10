@@ -253,6 +253,9 @@ SearchLimits EngineController::PopulateSearchLimits(
       start_time +
       std::chrono::milliseconds(std::min(static_cast<int64_t>(this_move_time),
                                          *time - move_overhead));
+  limits.search_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+             *limits.search_deadline - start_time);
+  limits.extend_counter = 10;
   return limits;
 }
 

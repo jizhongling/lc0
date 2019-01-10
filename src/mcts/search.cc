@@ -340,8 +340,16 @@ void Search::MaybeTriggerStop() {
     }
     // Stop if reached time limit.
     if (limits_.search_deadline && GetTimeToDeadline() <= 0) {
-      LOGFILE << "Stopped search: Ran out of time.";
-      FireStopInternal();
+      bool extend_search = false;
+      if(!MaxVisitsMaxValueMatched()) limits_.extend_counter--;
+      if(limits_.extend_counter > 0) {
+        limits_.search_deadline = *limits_.search_deadline + *limits_.search_duration;
+        extend_search = true;
+      }
+      if(!extend_search) {
+        LOGFILE << "Stopped search: Ran out of time.";
+        FireStopInternal();
+      }
     }
     // Stop if average depth reached requested depth.
     if (limits_.depth >= 0 &&
@@ -482,6 +490,40 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
   if (final_bestmove_.HasNode() && final_bestmove_.node()->HasChildren()) {
     final_pondermove_ = GetBestChildNoTemperature(final_bestmove_.node());
   }
+}
+
+// Check whether max visits and max value are consistent
+bool Search::MaxVisitsMaxValueMatched() const {
+  Node* parent = root_node_;
+  int count = 1;
+  MoveList root_limit;
+  if (parent == root_node_) {
+    PopulateRootMoveLimit(&root_limit);
+  }
+  // Best child is selected using the following criteria:
+  // * Largest number of playouts.
+  // * If two nodes have equal number:
+  //   * If that number is 0, the one with larger prior wins.
+  //   * If that number is larger than 0, the one with larger eval wins.
+  using El = std::tuple<uint64_t, float, float, EdgeAndNode>;
+  std::vector<El> edges;
+  for (auto edge : parent->Edges()) {
+    if (parent == root_node_ && !root_limit.empty() &&
+        std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
+            root_limit.end()) {
+      continue;
+    }
+    edges.emplace_back(edge.GetN(), edge.GetQ(0), edge.GetP(), edge);
+  }
+
+  if(edges.empty()) return true;
+  auto middle = (static_cast<int>(edges.size()) > count) ? edges.begin() + count
+                                                         : edges.end();
+  std::partial_sort(edges.begin(), middle, edges.end(), std::greater<El>());
+  EdgeAndNode edge_maxN = std::get<3>(edges[0]);
+  std::partial_sort(edges.begin(), middle, edges.end(), [](const El& x, const El& y) { return std::get<1>(x) > std::get<1>(y); });
+  EdgeAndNode edge_maxQ = std::get<3>(edges[0]);
+  return edge_maxN.GetMove().as_nn_index() == edge_maxQ.GetMove().as_nn_index();
 }
 
 // Returns @count children with most visits.
