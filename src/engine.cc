@@ -253,9 +253,11 @@ SearchLimits EngineController::PopulateSearchLimits(
       start_time +
       std::chrono::milliseconds(std::min(static_cast<int64_t>(this_move_time),
                                          *time - move_overhead));
-  limits.search_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-      *limits.search_deadline - start_time);
-  limits.play_time = std::chrono::milliseconds(*time - move_overhead);
+  limits.play_deadline =
+    start_time + std::chrono::milliseconds(*time - move_overhead);
+  limits.extend_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+      *limits.search_deadline - start_time) * limits.extend_multiplier;
+  limits.extend_limit *= options_.Get<int>(kThreadsOptionId.GetId());
   return limits;
 }
 

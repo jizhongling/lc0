@@ -319,7 +319,7 @@ void Search::MaybeTriggerStop() {
   if (total_playouts_ == 0) return;
 
   // If not yet stopped, try to stop for different reasons.
-  if (!stop_.load(std::memory_order_acquire)) {
+  if (!stop_.load(std::memory_order_acquire) && !ExtendSearch()) {
     // If smart pruning tells to stop (best move found), stop.
     if (only_one_possible_move_left_) {
       FireStopInternal();
@@ -339,22 +339,9 @@ void Search::MaybeTriggerStop() {
               << total_playouts_ + initial_visits_ << ">=" << limits_.visits;
     }
     // Stop if reached time limit.
-    if (limits_.search_deadline && GetTimeToDeadline() <= 0) {
-      bool extend_search = false;
-      if(!MaxVisitsMaxValueMatched()) {
-        limits_.extend_counter++;
-        if(limits_.extend_counter < 3 && *limits_.search_duration <
-            *limits_.play_time - *limits_.search_duration*limits_.extend_counter) {
-          LOGFILE << "Extended search: " << limits_.extend_counter << " times.";
-          limits_.search_deadline = std::chrono::steady_clock::now()
-            + *limits_.search_duration;
-          extend_search = true;
-        }
-      }
-      if(!extend_search) {
-        LOGFILE << "Stopped search: Ran out of time.";
-        FireStopInternal();
-      }
+    if (limits_.search_deadline && GetTimeToDeadline() <= 0 && !ExtendSearch()) {
+      LOGFILE << "Stopped search: Ran out of time.";
+      FireStopInternal();
     }
     // Stop if average depth reached requested depth.
     if (limits_.depth >= 0 &&
@@ -497,8 +484,16 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
   }
 }
 
-// Check whether max visits and max value are consistent
-bool Search::MaxVisitsMaxValueMatched() const {
+// Check whether max visits and max value are consistent.
+// If not, extend search.
+bool Search::ExtendSearch() {
+  auto now = std::chrono::steady_clock::now();
+  auto play_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+      *limits_.play_deadline - now);
+  if(limits_.extend_counter >= limits_.extend_limit ||
+      limits_.extend_duration >= play_time)
+    return false;
+
   Node* parent = root_node_;
   int count = 1;
   MoveList root_limit;
@@ -510,7 +505,7 @@ bool Search::MaxVisitsMaxValueMatched() const {
   // * If two nodes have equal number:
   //   * If that number is 0, the one with larger prior wins.
   //   * If that number is larger than 0, the one with larger eval wins.
-  using El = std::tuple<uint64_t, float, float, EdgeAndNode>;
+  using El = std::tuple<uint64_t, float>;
   std::vector<El> edges;
   for (auto edge : parent->Edges()) {
     if (parent == root_node_ && !root_limit.empty() &&
@@ -518,18 +513,25 @@ bool Search::MaxVisitsMaxValueMatched() const {
             root_limit.end()) {
       continue;
     }
-    edges.emplace_back(edge.GetN(), edge.GetQ(0), edge.GetP(), edge);
+    edges.emplace_back(edge.GetN(), edge.GetQ(0));
   }
 
-  if(edges.empty()) return true;
+  if(edges.empty()) return false;
   auto middle = (static_cast<int>(edges.size()) > count) ? edges.begin() + count
                                                          : edges.end();
   std::partial_sort(edges.begin(), middle, edges.end(), std::greater<El>());
-  auto move_maxN = std::get<3>(edges[0]).GetMove().as_nn_index();
+  auto maxN = std::get<0>(edges.front());
   std::partial_sort(edges.begin(), middle, edges.end(),
       [](const El& x, const El& y) { return std::get<1>(x) > std::get<1>(y); });
-  auto move_maxQ = std::get<3>(edges[0]).GetMove().as_nn_index();
-  return move_maxN == move_maxQ;
+  auto N_maxQ = std::get<0>(edges.front());
+  auto maxQ = std::get<1>(edges.front());
+  if(maxN != N_maxQ) {
+    limits_.extend_counter++;
+    limits_.search_deadline = now + limits_.extend_duration;
+    LOGFILE << "Extended search: " << limits_.extend_counter << " times.";
+    return true;
+  }
+  return false;
 }
 
 // Returns @count children with most visits.
@@ -918,6 +920,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         // To ensure we have at least one node to expand, always include
         // current best node.
         if (child != search_->current_best_edge_ &&
+            child.GetQ(0) < search_->current_best_edge_.GetQ(0) &&
             search_->remaining_playouts_ < best_node_n - child.GetN()) {
           continue;
         }

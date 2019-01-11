@@ -50,9 +50,11 @@ struct SearchLimits {
   std::int64_t playouts = -1;
   int depth = -1;
   optional<std::chrono::steady_clock::time_point> search_deadline;
-  optional<std::chrono::milliseconds> search_duration;
-  optional<std::chrono::milliseconds> play_time;
+  optional<std::chrono::steady_clock::time_point> play_deadline;
+  std::chrono::milliseconds extend_duration;
+  int extend_multiplier = 3;
   int extend_counter = 0;
+  int extend_limit = 10;
   bool infinite = false;
   MoveList searchmoves;
 
@@ -102,8 +104,9 @@ class Search {
   // Computes the best move, maybe with temperature (according to the settings).
   void EnsureBestMoveKnown();
 
-  // Check whether max visits and max value are consistent
-  bool MaxVisitsMaxValueMatched() const;
+  // Check whether max visits and max value are consistent.
+  // If not, extend search.
+  bool ExtendSearch();
 
   // Returns a child with most visits, with or without temperature.
   // NoTemperature is safe to use on non-extended nodes, while WithTemperature
