@@ -319,7 +319,7 @@ void Search::MaybeTriggerStop() {
   if (total_playouts_ == 0) return;
 
   // If not yet stopped, try to stop for different reasons.
-  if (!stop_.load(std::memory_order_acquire) && !ExtendSearch()) {
+  if (!stop_.load(std::memory_order_acquire)) {
     // If smart pruning tells to stop (best move found), stop.
     if (only_one_possible_move_left_) {
       FireStopInternal();
@@ -491,7 +491,7 @@ bool Search::ExtendSearch() {
   auto play_time = std::chrono::duration_cast<std::chrono::milliseconds>(
       *limits_.play_deadline - now);
   if(limits_.extend_counter >= limits_.extend_limit ||
-      limits_.extend_duration >= play_time)
+      limits_.move_time >= play_time)
     return false;
 
   Node* parent = root_node_;
@@ -524,10 +524,9 @@ bool Search::ExtendSearch() {
   std::partial_sort(edges.begin(), middle, edges.end(),
       [](const El& x, const El& y) { return std::get<1>(x) > std::get<1>(y); });
   auto N_maxQ = std::get<0>(edges.front());
-  auto maxQ = std::get<1>(edges.front());
   if(maxN != N_maxQ) {
     limits_.extend_counter++;
-    limits_.search_deadline = now + limits_.extend_duration;
+    limits_.search_deadline = now + limits_.move_time;
     LOGFILE << "Extended search: " << limits_.extend_counter << " times.";
     return true;
   }

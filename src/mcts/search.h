@@ -51,10 +51,9 @@ struct SearchLimits {
   int depth = -1;
   optional<std::chrono::steady_clock::time_point> search_deadline;
   optional<std::chrono::steady_clock::time_point> play_deadline;
-  std::chrono::milliseconds extend_duration;
-  int extend_multiplier = 3;
+  std::chrono::milliseconds move_time;
   int extend_counter = 0;
-  int extend_limit = 10;
+  int extend_limit = 5;
   bool infinite = false;
   MoveList searchmoves;
 
