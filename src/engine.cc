@@ -82,6 +82,11 @@ const OptionId kSpendSavedTimeId{
     "the next move rather than to the entire game. When 1, all saved time is "
     "added to the next move's budget; when 0, saved time is distributed among "
     "all future moves."};
+const OptionId kExtendLimitId{
+    "extend-limit", "ExtendLimit",
+    "When max visits and max value are not consistent, the engine will extend "
+    "the search. This number controls how many times allowed the engine to extend "
+    "the search."};
 const OptionId kPonderId{"ponder", "Ponder",
                          "This option is ignored. Here to please chess GUIs."};
 // Warning! When changed, also change number 30 in the help below!
@@ -133,6 +138,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   // This option is currently not used by lc0 in any way.
   options->Add<BoolOption>(kPonderId) = true;
   options->Add<FloatOption>(kSpendSavedTimeId, 0.0f, 1.0f) = 0.6f;
+  options->Add<IntOption>(kExtendLimitId, 0, 100) = 3;
   options->Add<IntOption>(kRamLimitMbId, 0, 100000000) = 0;
 
   // Hide time curve options.
@@ -256,6 +262,7 @@ SearchLimits EngineController::PopulateSearchLimits(
   limits.play_deadline =
     start_time + std::chrono::milliseconds(*time - move_overhead);
   limits.move_time = std::chrono::milliseconds(static_cast<int64_t>(this_move_time));
+  limits.extend_limit = options_.Get<int>(kExtendLimitId.GetId());
   return limits;
 }
 
