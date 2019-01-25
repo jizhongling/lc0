@@ -499,30 +499,23 @@ bool Search::ExtendSearch() {
     return false;
 
   Node* parent = root_node_;
-  int count = 1;
   MoveList root_limit;
-  if (parent == root_node_) {
-    PopulateRootMoveLimit(&root_limit);
-  }
-  // Best child is selected using the following criteria:
-  // * Largest number of playouts.
-  // * If two nodes have equal number:
-  //   * If that number is 0, the one with larger prior wins.
-  //   * If that number is larger than 0, the one with larger eval wins.
+  PopulateRootMoveLimit(&root_limit);
+  const float fpu = GetFpu(params_, parent, true);
   using El = std::tuple<uint64_t, float>;
   std::vector<El> edges;
   for (auto edge : parent->Edges()) {
-    if (parent == root_node_ && !root_limit.empty() &&
+    if (!root_limit.empty() &&
         std::find(root_limit.begin(), root_limit.end(), edge.GetMove()) ==
-            root_limit.end()) {
+        root_limit.end()) {
       continue;
     }
-    edges.emplace_back(edge.GetN(), edge.GetQ(0));
+    edges.emplace_back(edge.GetN(), edge.GetQ(fpu));
   }
 
   if(edges.empty()) return false;
-  auto middle = (static_cast<int>(edges.size()) > count) ? edges.begin() + count
-                                                         : edges.end();
+  auto middle = (static_cast<int>(edges.size()) > 1) ? edges.begin() + 1
+                                                     : edges.end();
   std::partial_sort(edges.begin(), middle, edges.end(), std::greater<El>());
   auto maxN = std::get<0>(edges.front());
   std::partial_sort(edges.begin(), middle, edges.end(),
